@@ -502,12 +502,65 @@ main { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 24px); }
 .stage-badge.wait { color: var(--amber); }
 .stage-hint {
   position: absolute;
-  top: 18px;
-  right: 16px;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 12;
   font-size: 11.5px;
   color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
 }
+.stage-wrap .stage-missing { bottom: 38px; }
+.view-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 12;
+  display: flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--line);
+}
+.view-toggle button {
+  height: 26px;
+  min-width: 40px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+}
+.view-toggle button.on { background: var(--primary); color: var(--on-primary); }
+.stage-fab {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  z-index: 12;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--line);
+}
+.stage-fab:active { transform: scale(0.94); }
+.stage-3d .stage3d-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: pan-y;
+  transition: opacity 0.25s;
+}
+.stage-3d.loading .stage3d-canvas { opacity: 0; }
+.stage-3d .spinner { position: absolute; left: 50%; top: 50%; margin: -15px 0 0 -15px; }
+.stage-3d:not(.loading) .spinner { display: none; }
 
 .slots { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .slot {

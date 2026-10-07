@@ -16,14 +16,19 @@ export function stageHTML(items, { size = 'full', active = null } = {}) {
     .map(i => `<img class="stage-layer${i.id === active ? ' is-active' : ''}" data-layer="${i.id}"
       src="${esc(imageUrl(i))}" style="${layerStyle(fitFor(i), i)}" alt="${esc(i.name)}" draggable="false">`)
     .join('');
-  const missing = items.filter(i => !imageUrl(i));
-  const named = size === 'full' || size === 'medium';
-  const chips = size === 'tiny' ? '' : `<div class="stage-missing${named ? '' : ' dots-only'}">
-    ${missing.map(i => `<span title="${esc(i.name)}"><i style="background:${esc(i.color)}"></i>${named ? esc(i.name) : ''}</span>`).join('')}
-  </div>`;
   return `<div class="stage stage-${size}">
     <img class="stage-base" src="assets/mannequin.jpg" alt="" draggable="false">
-    ${layers}${missing.length ? chips : ''}
+    ${layers}${missingHTML(items, size)}
+  </div>`;
+}
+
+// Chips for picked items that have no photo to put on the mannequin.
+export function missingHTML(items, size = 'full') {
+  const missing = items.filter(i => !imageUrl(i));
+  if (!missing.length || size === 'tiny') return '';
+  const named = size === 'full' || size === 'medium';
+  return `<div class="stage-missing${named ? '' : ' dots-only'}">
+    ${missing.map(i => `<span title="${esc(i.name)}"><i style="background:${esc(i.color)}"></i>${named ? esc(i.name) : ''}</span>`).join('')}
   </div>`;
 }
 

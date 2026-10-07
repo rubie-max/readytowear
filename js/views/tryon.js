@@ -1,10 +1,19 @@
 import { CATEGORIES, statusById } from '../constants.js';
 import { $, $$, esc, icon, openSheet, toast } from '../ui.js';
 import { state, itemById, outfitById, saveOutfit, wear, suggestPick } from '../state.js';
-import { stageHTML, thumbHTML } from '../mannequin.js';
+import { missingHTML, stageHTML, thumbHTML } from '../mannequin.js';
 import { openItemSheet, openItemForm } from './items.js';
 
 const SLOTS = CATEGORIES;
+const MODE_KEY = 'readytowear-tryon-mode';
+let viewerModule = null;
+let viewer = null;
+
+const savedMode = () => (localStorage.getItem(MODE_KEY) === '3d' ? '3d' : '2d');
+function setMode(t, mode) {
+  t.mode = mode;
+  localStorage.setItem(MODE_KEY, mode);
+}
 
 function tryonState() {
   if (!state.ui.tryon) {
@@ -15,7 +24,7 @@ function tryonState() {
         .sort((a, b) => a.name.localeCompare(b.name))[0];
       pick[cat.id] = cat.required && first ? first.id : null;
     });
-    state.ui.tryon = { pick, cleanOnly: true, slot: 'top', outfitId: null };
+    state.ui.tryon = { pick, cleanOnly: true, slot: 'top', outfitId: null, mode: savedMode() };
   }
   return state.ui.tryon;
 }
@@ -23,7 +32,7 @@ function tryonState() {
 export function startTryOn(outfit = null) {
   const pick = Object.fromEntries(SLOTS.map(c => [c.id, null]));
   outfit?.itemIds.map(itemById).filter(Boolean).forEach(i => { pick[i.category] = i.id; });
-  state.ui.tryon = { pick, cleanOnly: !outfit, slot: 'top', outfitId: outfit?.id || null };
+  state.ui.tryon = { pick, cleanOnly: !outfit, slot: 'top', outfitId: outfit?.id || null, mode: savedMode() };
 }
 
 function options(cat, t) {
@@ -63,16 +72,24 @@ export function renderTryOn(root) {
   const editing = t.outfitId && outfitById(t.outfitId);
   const activeCat = SLOTS.find(c => c.id === t.slot) || SLOTS[0];
   const strip = options(activeCat, t);
+  const is3d = t.mode === '3d';
 
   root.innerHTML = `
     <div class="tryon">
       ${editing ? `<div class="editing-bar">Editing <b>${esc(editing.name)}</b><button class="link-btn" data-stop-edit>Done</button></div>` : ''}
       <div class="stage-wrap" data-stage>
-        ${stageHTML(items, { size: 'full' })}
+        ${is3d
+          ? `<div class="stage stage-full stage-3d loading" data-3d><div class="spinner"></div>${missingHTML(items)}</div>`
+          : stageHTML(items, { size: 'full' })}
         <span class="stage-badge ${notClean.length ? 'wait' : 'ready'}">
           ${items.length ? (notClean.length ? `${notClean.length} not clean` : 'All clean') : 'Pick some clothes'}
         </span>
-        <span class="stage-hint">Swipe on the body to swap</span>
+        <div class="view-toggle" role="group" aria-label="View">
+          <button class="${is3d ? '' : 'on'}" data-mode="2d" aria-pressed="${!is3d}">2D</button>
+          <button class="${is3d ? 'on' : ''}" data-mode="3d" aria-pressed="${is3d}">3D</button>
+        </div>
+        <span class="stage-hint">${is3d ? 'Drag to spin · pinch to zoom' : 'Swipe on the body to swap'}</span>
+        ${is3d ? `<button class="stage-fab" data-spin aria-label="Spin all the way round">${icon('rotate', 19)}</button>` : ''}
       </div>
 
       <div class="slots">
@@ -141,8 +158,43 @@ export function renderTryOn(root) {
     const outfit = editing && sameItems(editing.itemIds, ids) ? editing : null;
     wear(ids, outfit);
   };
+  $$('[data-mode]', root).forEach(b => {
+    b.onclick = () => {
+      if (t.mode === b.dataset.mode) return;
+      setMode(t, b.dataset.mode);
+      rerender();
+    };
+  });
 
-  bindSwipe($('[data-stage]', root), t, rerender);
+  if (is3d) mount3d($('[data-3d]', root), items, t, rerender);
+  else bindSwipe($('[data-stage]', root), t, rerender);
+}
+
+// The 3D code (and its 700 KB library) only loads the first time someone switches to 3D.
+function mount3d(host, items, t, rerender) {
+  $('[data-spin]', host.parentElement).onclick = () => viewer?.spin360();
+  const fallback = err => {
+    console.error(err);
+    toast("3D view isn't available on this device", { error: true });
+    setMode(t, '2d');
+    rerender();
+  };
+  const show = m => {
+    try {
+      viewer = m.show3D(host, items, {
+        onReady: () => host.classList.remove('loading'),
+        onPick: slot => {
+          if (t.slot === slot) return;
+          t.slot = slot;
+          rerender();
+        },
+      });
+    } catch (err) {
+      fallback(err);
+    }
+  };
+  if (viewerModule) show(viewerModule);
+  else import('../viewer3d.js').then(m => { viewerModule = m; if (host.isConnected) show(m); }, fallback);
 }
 
 const sameItems = (a, b) => a.length === b.length && a.every(id => b.includes(id));
