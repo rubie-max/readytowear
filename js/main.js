@@ -1,7 +1,7 @@
 import { APP_NAME } from './config.js';
 import { createStore } from './store.js';
 import { $, $$, esc, icon, openSheet, toast } from './ui.js';
-import { state, onChange, loadAll } from './state.js';
+import { state, onChange, loadAll, syncFromRemote } from './state.js';
 import { renderWardrobe } from './views/wardrobe.js';
 import { renderTryOn } from './views/tryon.js';
 import { renderOutfits } from './views/outfits.js';
@@ -19,6 +19,7 @@ const app = $('#app');
 async function boot() {
   try {
     state.store = await createStore();
+    state.store.onRemoteChange = syncFromRemote;
     state.user = await state.store.getUser();
   } catch (e) {
     console.error(e);
@@ -39,14 +40,14 @@ function showLogin() {
         <h1>${esc(APP_NAME)}</h1>
         <p class="login-sub">Your wardrobe, always ready.</p>
         <form class="form" novalidate>
-          <label class="field"><span>Email</span>
-            <input type="email" name="email" autocomplete="username" inputmode="email" required></label>
+          <label class="field"><span>Username</span>
+            <input type="text" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
           <label class="field"><span>Password</span>
             <input type="password" name="password" autocomplete="current-password" required></label>
           <p class="form-error" hidden></p>
           <button type="submit" class="btn btn-primary btn-block">Sign in</button>
         </form>
-        ${demo ? `<p class="login-note">Demo mode: any email and password works, and data stays in this browser.</p>` : ''}
+        ${demo ? `<p class="login-note">Demo mode: any username and password works, and data stays in this browser.</p>` : ''}
       </div>
     </div>`;
 
@@ -59,10 +60,10 @@ function showLogin() {
     button.disabled = true;
     button.textContent = 'Signing in…';
     try {
-      state.user = await state.store.signIn(form.email.value.trim(), form.password.value);
+      state.user = await state.store.signIn(form.username.value, form.password.value);
       enterApp();
     } catch (err) {
-      error.textContent = /invalid/i.test(err.message) ? 'Wrong email or password.' : (err.message || 'Could not sign in.');
+      error.textContent = err.message || 'Could not sign in.';
       error.hidden = false;
       button.disabled = false;
       button.textContent = 'Sign in';
@@ -77,14 +78,16 @@ async function enterApp() {
   } catch (e) {
     console.error(e);
     app.innerHTML = `<div class="center-msg"><h2>Couldn't load your wardrobe</h2><p>${esc(e.message || e)}</p>
-      <button class="btn btn-primary" onclick="location.reload()">Try again</button></div>`;
+      <button class="btn btn-primary" onclick="location.reload()">Try again</button>
+      <button class="btn btn-ghost" data-logout>Sign out</button></div>`;
+    $('[data-logout]', app).onclick = signOut;
     return;
   }
 
   app.innerHTML = `
     <header class="topbar">
       <h1 data-title></h1>
-      <button class="avatar" data-account aria-label="Account">${esc((state.user.email || '?')[0].toUpperCase())}</button>
+      <button class="avatar" data-account aria-label="Account">${esc(initial())}</button>
     </header>
     ${state.store.mode === 'demo' ? `<div class="demo-banner">Demo mode: data is only saved in this browser.</div>` : ''}
     <main id="view"></main>
@@ -111,31 +114,47 @@ function renderView() {
   tab.render($('#view'), go);
 }
 
+const displayName = () => state.user?.name || state.user?.email || '';
+const initial = () => (displayName() || '?')[0].toUpperCase();
+
+async function signOut() {
+  await state.store.signOut();
+  Object.assign(state, { user: null, items: [], outfits: [], plans: [], logs: [], urls: {} });
+  state.ui.tryon = null;
+  showLogin();
+  toast('Signed out');
+}
+
 function openAccount() {
   const sheet = openSheet({
     title: 'Account',
     render: () => `
       <div class="account">
-        <div class="avatar avatar-lg">${esc((state.user.email || '?')[0].toUpperCase())}</div>
-        <div><strong>${esc(state.user.email)}</strong>
-          <small>${state.store.mode === 'demo' ? 'Demo mode (this browser only)' : 'Synced to your account'}</small></div>
+        <div class="avatar avatar-lg">${esc(initial())}</div>
+        <div><strong>${esc(displayName())}</strong>
+          <small>${state.store.mode === 'demo' ? 'Demo mode (this browser only)' : 'Synced across your devices via GitHub'}</small></div>
       </div>
       <p class="detail-note">${state.items.length} items · ${state.outfits.length} outfits · ${state.logs.length} days in history</p>
       <div class="sheet-actions">
         <button class="btn btn-danger btn-block" data-logout>${icon('logout', 18)} Sign out</button>
       </div>`,
     bind: el => {
-      $('[data-logout]', el).onclick = async () => {
-        await state.store.signOut();
+      $('[data-logout]', el).onclick = () => {
         sheet.close();
-        Object.assign(state, { user: null, items: [], outfits: [], plans: [], logs: [], urls: {} });
-        state.ui.tryon = null;
-        showLogin();
-        toast('Signed out');
+        signOut();
       };
     },
   });
 }
+
+// Pick up changes made on other devices when the app comes back into view, and every
+// minute while it stays open.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.user) syncFromRemote();
+});
+setInterval(() => {
+  if (document.visibilityState === 'visible' && state.user) syncFromRemote();
+}, 60000);
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

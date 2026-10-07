@@ -59,6 +59,19 @@ export async function loadAll() {
   await loadUrls();
 }
 
+// Pulls in changes saved from another device. Quietly does nothing when offline.
+export async function syncFromRemote() {
+  try {
+    const fresh = await state.store.refresh();
+    if (!fresh) return;
+    Object.assign(state, fresh);
+    await loadUrls();
+    changed();
+  } catch (e) {
+    console.warn('Sync failed', e);
+  }
+}
+
 export async function loadUrls() {
   const missing = state.items.map(i => i.imagePath).filter(p => p && !state.urls[p]);
   if (!missing.length) return;
